@@ -204,6 +204,8 @@ fetch('_setup')
             .use(vuetify)
             .use(router)
 
+        window.app = app;
+
         const head = createHead()
         app.use(head)
         app.mixin(VueHeadMixin)
