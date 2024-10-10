@@ -31,12 +31,29 @@
                 :state="widget.state"
             />
         </div>
+        <div v-if="dialogGroups">
+            <div
+                v-for="g in dialogGroups"
+                :id="'nrdb-ui-group-' + g.id"
+                :key="g.id"
+                class="nrdb-ui-group"
+                :disabled="g.disabled === true ? 'disabled' : null"
+                :class="getGroupClass(g)"
+                :style="`grid-column-end: span min(${ g.width }, var(--layout-columns)`"
+            >
+                <DialogGroup :group="g">
+                    <widget-group :group="g" :widgets="widgetsByGroup(g.id)" />
+                </DialogGroup>
+            </div>
+        </div>
     </BaselineLayout>
 </template>
 
 <script>
-// eslint-disable-next-line import/order
+import Responsiveness from '../mixins/responsiveness.js'
+
 import BaselineLayout from './Baseline.vue'
+import DialogGroup from './DialogGroup.vue'
 import WidgetGroup from './Group.vue'
 
 // eslint-disable-next-line import/order, sort-imports
@@ -46,8 +63,10 @@ export default {
     name: 'LayoutGrid',
     components: {
         BaselineLayout,
+        DialogGroup,
         WidgetGroup
     },
+    mixins: [Responsiveness],
     computed: {
         ...mapState('ui', ['groups', 'widgets', 'pages']),
         ...mapState('data', ['properties']),
@@ -58,13 +77,17 @@ export default {
                 // only show hte groups that haven't had their "visible" property set to false
                 .filter((g) => {
                     if ('visible' in g) {
-                        return g.visible
+                        return g.visible && g.groupType !== 'dialog'
                     }
                     return true
                 })
                 .sort((a, b) => {
                     return a.order - b.order
                 })
+            return groups
+        },
+        dialogGroups () {
+            const groups = this.groupsByPage(this.$route.meta.id).filter((g) => g.groupType === 'dialog')
             return groups
         },
         pageWidgets: function () {
@@ -113,7 +136,7 @@ export default {
     --layout-gap: 12px;
 }
 .nrdb-layout--grid {
-    --layout-columns: 12;
+    --layout-columns: v-bind(columns);
     display: grid;
     grid-template-columns: repeat(var(--layout-columns), 1fr);
     flex-wrap: wrap;
@@ -128,24 +151,6 @@ export default {
 
 .v-card {
     width: 100%;
-}
-
-@media only screen and (max-width: 1024px) {
-    .nrdb-layout--grid {
-        --layout-columns: 9;
-    }
-}
-
-@media only screen and (max-width: 768px) {
-    .nrdb-layout--grid {
-        --layout-columns: 6;
-    }
-}
-
-@media only screen and (max-width: 576px) {
-    .nrdb-layout--grid {
-        --layout-columns: 3;
-    }
 }
 
 </style>

@@ -1,10 +1,9 @@
-const fs = require('fs')
 const path = require('path')
 
 const v = require('../../package.json').version
 const datastore = require('../store/data.js')
 const statestore = require('../store/state.js')
-const { appendTopic, addConnectionCredentials } = require('../utils/index.js')
+const { appendTopic, addConnectionCredentials, getThirdPartyWidgets } = require('../utils/index.js')
 
 // from: https://stackoverflow.com/a/28592528/3016654
 function join (...paths) {
@@ -32,8 +31,8 @@ module.exports = function (RED) {
     statestore.setConfig(RED)
 
     /**
-     * @typedef {import('socket.io/dist').Socket} Socket
-     * @typedef {import('socket.io/dist').Server} Server
+     * @typedef {import('socket.io').Socket} Socket
+     * @typedef {import('socket.io').Server} Server
      */
 
     // store state that can maintain cross re-deployments
@@ -90,36 +89,10 @@ module.exports = function (RED) {
             /**
              * Load in third party widgets
              */
-            let packagePath, packageJson
-            if (RED.settings?.userDir) {
-                packagePath = path.join(RED.settings.userDir, 'package.json')
-                packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
-            } else {
-                node.log('Cannot import third party widgets. No access to Node-RED package.json')
-            }
 
-            if (packageJson && packageJson.dependencies) {
-                Object.entries(packageJson.dependencies)?.filter(([packageName, _packageVersion]) => {
-                    return packageName.includes('node-red-dashboard-2-')
-                }).map(([packageName, _packageVersion]) => {
-                    const modulePath = path.join(RED.settings.userDir, 'node_modules', packageName)
-                    const packagePath = path.join(modulePath, 'package.json')
-                    // get third party package.json
-                    const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
-                    if (packageJson?.['node-red-dashboard-2']) {
-                        // loop over object of widgets
-                        Object.entries(packageJson['node-red-dashboard-2'].widgets).forEach(([widgetName, widgetConfig]) => {
-                            uiShared.contribs[widgetName] = {
-                                package: packageName,
-                                name: widgetName,
-                                src: widgetConfig.output,
-                                component: widgetConfig.component
-                            }
-                        })
-                    }
-                    return packageJson
-                })
-            }
+            uiShared.contribs = loadContribs(node)
+            node.onTypeRegistered = onTypeRegistered.bind(null, node)
+            RED.events.on('type-registered', node.onTypeRegistered)
 
             /**
              * Configure Web Server to handle UI traffic
@@ -179,7 +152,7 @@ module.exports = function (RED) {
                 const root = RED.settings.httpNodeRoot || '/'
                 const fullPath = join(root, config.path)
                 const socketIoPath = join('/', fullPath, 'socket.io')
-                /** @type {import('socket.io/dist').ServerOptions} */
+                /** @type {import('socket.io').ServerOptions} */
                 const serverOptions = {
                     path: socketIoPath,
                     maxHttpBufferSize: uiShared.settings.maxHttpBufferSize || 1e6 // SocketIO default size
@@ -215,6 +188,57 @@ module.exports = function (RED) {
                 node.warn('Cannot create UI Base node when httpNodeRoot set to false')
             }
         }
+    }
+
+    function onTypeRegistered (node, type) {
+        // reload nodes from user directory package.json
+        if (RED.settings?.userDir) {
+            try {
+                const contribs = getThirdPartyWidgets(RED.settings.userDir)
+                if (contribs[type]) {
+                    uiShared.contribs[type] = contribs[type]
+                }
+            } catch (error) {
+                node.log('Cannot import third party widget for type ' + type)
+            }
+        }
+    }
+
+    function loadContribs (node) {
+        // from nodesDir
+        let contribs = { ...uiShared.contribs }
+        if (RED.settings?.nodesDir) {
+            const nodesDir = Array.isArray(RED.settings.nodesDir) ? RED.settings.nodesDir : [RED.settings.nodesDir]
+            for (const dir of nodesDir) {
+                try {
+                    if (!dir || typeof dir !== 'string') { continue }
+                    const _contribs = getThirdPartyWidgets(dir)
+                    contribs = { ...contribs, ..._contribs }
+                } catch (error) {
+                    node.log(`Cannot import third party widgets from nodes directory '${dir}}' package.json`)
+                }
+            }
+        }
+
+        // from user directory package.json
+        if (RED.settings?.userDir) {
+            try {
+                const _contribs = getThirdPartyWidgets(RED.settings.userDir)
+                contribs = { ...contribs, ..._contribs }
+            } catch (error) {
+                node.log('Cannot import third party widgets from user directory package.json')
+            }
+        }
+
+        // from main Node-RED package.json
+        try {
+            const appRoot = path.join(require.main.paths?.[0]?.split('node_modules')[0], '..')
+            const _contribs = getThirdPartyWidgets(appRoot)
+            contribs = { ...contribs, ..._contribs }
+        } catch (error) {
+            node.log('Cannot import third party widgets from main application root package.json')
+        }
+        return contribs
     }
 
     /**
@@ -265,6 +289,7 @@ module.exports = function (RED) {
         }
         node.ui.dashboards.clear() // ensure we clear out any dashboards that may have been left over
         node.uiShared = null // remove reference to ui object
+        RED.events.off('type-registered', node.onTypeRegistered)
         done && done()
     }
 

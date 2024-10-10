@@ -14,7 +14,7 @@
         class="nrdb-table"
         :mobile="isMobile"
         :class="{'nrdb-table--mobile': isMobile}"
-        :items="messages[id]?.payload" :return-object="true"
+        :items="payload || []" :return-object="true"
         :items-per-page="itemsPerPage"
         :headers="headers" :show-select="props.selectionType === 'checkbox'"
         :search="search"
@@ -34,7 +34,7 @@
                         {{ col.title }}
                     </div>
                     <div class="nrdb-table-cell-align" :style="{'justify-content': isMobile ? 'end' : (col.align || 'start')}">
-                        <UITableCell :row="index + 1" :item="item" :property="col.key" :type="col.type" @action-click="onCellClick" />
+                        <UITableCell :row="index + 1" :item="item" :property="col.key" :propertyType="col.keyType" :type="col.type" @action-click="onCellClick" />
                     </div>
                 </td>
             </tr>
@@ -69,17 +69,18 @@ export default {
                 page: 1,
                 pages: 0,
                 rows: []
-            }
+            },
+            localData: []
         }
     },
     computed: {
         ...mapState('data', ['messages']),
         headers () {
             if (this.props.autocols) {
-                if (this.messages[this.id]?.payload) {
+                if (this.localData?.length) {
                     // loop over data and get keys
                     const cols = []
-                    for (const row of this.messages[this.id].payload) {
+                    for (const row of this.localData) {
                         Object.keys(row).forEach((key) => {
                             if (!cols.includes(key)) {
                                 cols.push(key)
@@ -90,14 +91,13 @@ export default {
                         return { key: col, title: col }
                     })
                 } else {
-                    return [{
-                        key: '', title: ''
-                    }]
+                    return []
                 }
             } else if (this.props.columns) {
                 return this.props.columns.map((col) => {
                     return {
                         key: col.key,
+                        keyType: col.keyType || 'key',
                         title: col.label || col.title,
                         type: col.type,
                         align: col.align,
@@ -112,12 +112,7 @@ export default {
             }
         },
         rows () {
-            // store full set of data rows
-            if (this.messages[this.id]?.payload) {
-                return this.messages[this.id].payload
-            } else {
-                return undefined
-            }
+            return this.localData
         },
         itemsPerPage () {
             return this.props.maxrows || 0
@@ -127,6 +122,13 @@ export default {
                 typeMap[col.key] = col.type
                 return typeMap
             }, {})
+        },
+        payload () {
+            const value = this.messages[this.id]?.payload
+            return this.formatPayload(value) || []
+        },
+        isAppend () {
+            return this.props.action === 'append'
         }
     },
     watch: {
@@ -147,25 +149,53 @@ export default {
         }
     },
     created () {
-        this.$dataTracker(this.id)
+        this.$dataTracker(this.id, this.onMsgInput, this.onLoad)
     },
     mounted () {
-        this.calculatePaginatedRows()
         this.updateIsMobile()
         window.addEventListener('resize', this.updateIsMobile)
     },
     methods: {
+        formatPayload (value) {
+            if (value !== null && typeof value !== 'undefined') {
+                if (typeof value === 'object' && !Array.isArray(value)) {
+                    return [value]
+                }
+            }
+            return value
+        },
+        onMsgInput (msg) {
+            const value = this.formatPayload(msg?.payload)
+            if (this.props.action === 'append') {
+                this.localData = value && value?.length > 0 ? [...this.localData || [], ...value] : value
+            } else {
+                this.localData = value
+            }
+
+            this.$store.commit('data/bind', {
+                action: this.props.action,
+                widgetId: this.id,
+                msg: {
+                    payload: this.localData
+                }
+            })
+            this.calculatePaginatedRows()
+        },
+        onLoad (history) {
+            this.localData = []
+            this.onMsgInput(history)
+        },
         calculatePaginatedRows () {
-            if (this.props.maxrows > 0) {
-                this.pagination.pages = Math.ceil(this.rows?.length / this.props.maxrows)
-                this.pagination.rows = this.rows?.slice(
+            if (this.itemsPerPage > 0) {
+                this.pagination.pages = Math.ceil(this.localData?.length / this.props.maxrows)
+                this.pagination.rows = this.localData.slice(
                     (this.pagination.page - 1) * this.props.maxrows,
                     (this.pagination.page) * this.props.maxrows
                 )
             } else {
                 this.pagination.page = 1
                 this.pagination.pages = 0
-                this.pagination.rows = this.rows
+                this.pagination.rows = this.localData
             }
         },
         onRowClick (row) {

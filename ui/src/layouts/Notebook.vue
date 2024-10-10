@@ -30,21 +30,41 @@
                 :state="widget.state"
             />
         </div>
+        <div v-if="dialogGroups">
+            <div
+                v-for="g in dialogGroups"
+                :id="'nrdb-ui-group-' + g.id"
+                :key="g.id"
+                class="nrdb-ui-group"
+                :disabled="g.disabled === true ? 'disabled' : null"
+                :class="getGroupClass(g)"
+                :style="`grid-column-end: span min(${ g.width }, var(--layout-columns)`"
+            >
+                <DialogGroup :group="g">
+                    <widget-group :group="g" :widgets="widgetsByGroup(g.id)" />
+                </DialogGroup>
+            </div>
+        </div>
     </BaselineLayout>
 </template>
 
 <script>
 import { mapGetters, mapState } from 'vuex'
 
+import Responsiveness from '../mixins/responsiveness.js'
+
 import BaselineLayout from './Baseline.vue'
+import DialogGroup from './DialogGroup.vue'
 import WidgetGroup from './Group.vue'
 
 export default {
     name: 'LayoutFlex',
     components: {
         BaselineLayout,
+        DialogGroup,
         WidgetGroup
     },
+    mixins: [Responsiveness],
     data () {
         const rowHeight = getComputedStyle(document.body).getPropertyValue('--widget-row-height')
         return {
@@ -61,13 +81,17 @@ export default {
                 // only show the groups that haven't had their "visible" property set to false
                 .filter((g) => {
                     if ('visible' in g) {
-                        return g.visible
+                        return g.visible && g.groupType !== 'dialog'
                     }
                     return true
                 })
                 .sort((a, b) => {
                     return a.order - b.order
                 })
+            return groups
+        },
+        dialogGroups () {
+            const groups = this.groupsByPage(this.$route.meta.id).filter((g) => g.groupType === 'dialog')
             return groups
         },
         pageWidgets: function () {
@@ -122,7 +146,7 @@ export default {
     min-height: 100%;
     flex-wrap: wrap;
     padding: var(--page-padding);
-    --layout-columns: 12;
+    --layout-columns: v-bind(columns);
 }
 .nrdb-layout--notebook > div {
     width: 100%;
@@ -131,23 +155,5 @@ export default {
 
 .v-card {
     width: 100%;
-}
-
-@media only screen and (max-width: 1024px) {
-    .nrdb-layout--notebook {
-        --layout-columns: 9;
-    }
-}
-
-@media only screen and (max-width: 768px) {
-    .nrdb-layout--notebook {
-        --layout-columns: 6;
-    }
-}
-
-@media only screen and (max-width: 576px) {
-    .nrdb-layout--notebook {
-        --layout-columns: 3;
-    }
 }
 </style>
