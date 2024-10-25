@@ -176,9 +176,19 @@ export function importExternalComponent (file, packageName, widgetName = null) {
                 throw new Error(`Loaded /resources/${file} but library ${packageName} not found, is that the correct name?`)
             }
 
+            if (window[packageName][widgetName]) {
+                console.warn(`Luis77 found: ${widgetName} in ${packageName}`, window[packageName])
+            }
+
             if (!window[packageName][widgetName]) {
                 console.warn(`Failed to find ${widgetName} in ${packageName}`, window[packageName])
-                throw new Error(`Loaded /resources/${file} and library ${packageName}, but component ${widgetName} didn't appear to be exported, is that the correct name?`)
+                if (window[packageName].name == widgetName) {
+                    console.log('dynamic form found')
+                    window[packageName][widgetName] = window[packageName]
+                } else {
+                    throw new Error(`Loaded /resources/${file} and library ${packageName}, but component ${widgetName} didn't appear to be exported, is that the correct name?`)
+                }
+
             }
 
             // UMD Library will register itself on window[packageName][widgetName]

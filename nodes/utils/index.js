@@ -36,7 +36,7 @@ async function appendTopic (RED, config, wNode, msg) {
  * Adds socket/client data to a msg payload, if enabled
  *
  */
-function addConnectionCredentials(RED, msg, conn, config) {
+function addConnectionCredentials (RED, msg, conn, config) {
     if (config.includeClientData) {
         
         // Add _client to each element
@@ -71,6 +71,7 @@ function addConnectionCredentials(RED, msg, conn, config) {
 
         msg = processMsg(msg);
     }
+
     return msg;
 }
 

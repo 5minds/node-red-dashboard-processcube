@@ -1,30 +1,30 @@
 /* eslint-disable n/file-extension-in-import */
 /* eslint-disable import/no-unresolved */
 /* eslint-disable import/order */
-import { VueHeadMixin, createHead } from '@unhead/vue'
-import * as Vue from 'vue'
-import * as vuex from 'vuex'
-import App from './App.vue'
-import { io } from 'socket.io-client'
-import router from './router.mjs'
-import Alerts from './services/alerts.js'
-import Resize from './directives/resize.js'
+import { VueHeadMixin, createHead } from '@unhead/vue';
+import * as Vue from 'vue';
+import * as vuex from 'vuex';
+import App from './App.vue';
+import { io } from 'socket.io-client';
+import router from './router.mjs';
+import Alerts from './services/alerts.js';
+import Resize from './directives/resize.js';
 
 // Vuetify
-import '@mdi/font/css/materialdesignicons.css'
-import 'vuetify/styles'
-import { createVuetify } from 'vuetify'
-import * as components from 'vuetify/components'
-import * as directives from 'vuetify/directives'
+import '@mdi/font/css/materialdesignicons.css';
+import 'vuetify/styles';
+import { createVuetify } from 'vuetify';
+import * as components from 'vuetify/components';
+import * as directives from 'vuetify/directives';
 
 // Labs Imports
-import { VNumberInput } from 'vuetify/labs/VNumberInput'
-import { VTreeview } from 'vuetify/labs/VTreeview'
+import { VNumberInput } from 'vuetify/labs/VNumberInput';
+import { VTreeview } from 'vuetify/labs/VTreeview';
 
-import './stylesheets/common.css'
+import './stylesheets/common.css';
 
-import store from './store/index.mjs'
-import { useDataTracker } from './widgets/data-tracker.mjs' // eslint-disable-line import/order
+import store from './store/index.mjs';
+import { useDataTracker } from './widgets/data-tracker.mjs'; // eslint-disable-line import/order
 
 // set a base theme on which we will add our custom NR-defined theme
 const theme = {
@@ -40,41 +40,43 @@ const theme = {
         surface: '#ffffff',
         info: '#ff53d0',
         warning: '#ff8e00',
-        error: '#ff5252'
-    }
-}
+        error: '#ff5252',
+    },
+};
 
 const vuetify = createVuetify({
     components: {
         ...components,
         VNumberInput,
-        VTreeview
+        VTreeview,
     },
     directives: {
         ...directives,
-        resize: Resize
+        resize: Resize,
     },
     theme: {
         defaultTheme: 'nrdb',
         themes: {
-            nrdb: theme
-        }
+            nrdb: theme,
+        },
     },
     defaults: {
         global: {
-            density: 'default'
-        }
-    }
-})
+            density: 'default',
+        },
+    },
+});
 
-const host = new URL(window.location.href)
+const host = new URL(window.location.href);
 
-function forcePageReload (err) {
-    console.log('Reloading page:', err)
-    console.log('redirecting to:', window.location.origin + '/dashboard')
+function forcePageReload(err) {
+    console.log('Reloading page:', err);
+    console.log('redirecting to:', window.location.origin + '/dashboard');
 
     // Reloading dashboard without using cache by appending a cache-busting string to fully reload page to allow redirecting to auth
-    window.location.replace(window.location.origin + '/dashboard' + '?' + 'reloadTime=' + Date.now().toString() + Math.random()) // Seems to work on Edge and Chrome on Windows, Chromium and Firefox on Linux, and also on Chrome Android (and also as PWA App)
+    window.location.replace(
+        window.location.origin + '/dashboard' + '?' + 'reloadTime=' + Date.now().toString() + Math.random()
+    ); // Seems to work on Edge and Chrome on Windows, Chromium and Firefox on Linux, and also on Chrome Android (and also as PWA App)
 }
 
 /*
@@ -87,109 +89,109 @@ function forcePageReload (err) {
 fetch('_setup')
     .then(async (response) => {
         switch (true) {
-        case !response.ok && response.status === 401:
-            forcePageReload('Unauthenticated')
-            return
-        case !response.ok:
-            console.error('Failed to fetch setup data:', response)
-            return
-        case host.origin !== new URL(response.url).origin:
-            console.log('Following redirect:', response.url)
-            window.location.replace(response.url)
-            return
-        default:
-            break
+            case !response.ok && response.status === 401:
+                forcePageReload('Unauthenticated');
+                return;
+            case !response.ok:
+                console.error('Failed to fetch setup data:', response);
+                return;
+            case host.origin !== new URL(response.url).origin:
+                console.log('Following redirect:', response.url);
+                window.location.replace(response.url);
+                return;
+            default:
+                break;
         }
 
-        const url = new URL(response.url)
-        const basePath = url.pathname.replace('/_setup', '')
+        const url = new URL(response.url);
+        const basePath = url.pathname.replace('/_setup', '');
 
         // get the setup JSON from the server
-        const setup = await response.json()
-        setup.basePath = basePath
+        const setup = await response.json();
+        setup.basePath = basePath;
 
         if (setup.socketio?.path) {
             // get text before /socket.io and replace it with the calculated basePath
             // basePath would have taken into account any proxy and/or httpNodeRoot settings
-            const replace = setup.socketio.path.split('/socket.io')[0]
-            setup.socketio.path = setup.socketio.path.replace(replace, basePath)
+            const replace = setup.socketio.path.split('/socket.io')[0];
+            setup.socketio.path = setup.socketio.path.replace(replace, basePath);
         }
 
-        store.commit('setup/set', setup)
+        store.commit('setup/set', setup);
 
-        let disconnected = false
-        let retryCount = 0 // number of reconnection attempts made
+        let disconnected = false;
+        let retryCount = 0; // number of reconnection attempts made
 
-        let reconnectTO = null
-        const MAX_RETRIES = 22 // 4 at 2.5 seconds, 10 at 5 secs then 8 at 30 seconds
+        let reconnectTO = null;
+        const MAX_RETRIES = 22; // 4 at 2.5 seconds, 10 at 5 secs then 8 at 30 seconds
 
         const socket = io({
             ...setup.socketio,
-            reconnection: false
-        })
+            reconnection: false,
+        });
 
         // handle final disconnection
         socket.on('disconnect', (reason) => {
             if (!disconnected) {
-                retryCount = 0
-                disconnected = true
+                retryCount = 0;
+                disconnected = true;
             }
             // tell the user we're trying to connect
             Alerts.emit('Connection Lost', 'Attempting to reconnect to server...', 'red', {
                 displayTime: 0, // displayTime 0 persists notifications until another notification closes it
                 allowDismiss: false,
-                showCountdown: false
-            })
+                showCountdown: false,
+            });
             // attempt to reconnect
-            reconnect()
-        })
+            reconnect();
+        });
 
         socket.on('connect', () => {
-            console.log('SIO connected')
+            console.log('SIO connected');
             // if we've just disconnected (i.e. aren't connecting for the first time)
             if (disconnected) {
                 // send a notification/alert to the user to let them know the connection is live again
                 Alerts.emit('Connected', 'Connection re-established.', '#1BC318', {
                     displayTime: 1,
                     allowDismiss: true,
-                    showCountdown: true
-                })
+                    showCountdown: true,
+                });
             }
-            disconnected = false
-            clearTimeout(reconnectTO)
-        })
+            disconnected = false;
+            clearTimeout(reconnectTO);
+        });
 
         socket.on('connect_error', (err) => {
-            console.error('SIO connect error:', err, `err: ${JSON.stringify(err)}`)
+            console.error('SIO connect error:', err, `err: ${JSON.stringify(err)}`);
             if (err?.code === 'parser error') {
                 // There has been a 'parser error' during the attempt to connect. This means that socket.io
                 // does not like the response from the server from the attempt to connect.
                 // This happens if there is a proxy server in front of node red that has redirected to
                 // a login page. There may also be other situations under which this error occurs, but whatever the
                 // cause it doesn't seem that we can do much other than force a reload.
-                forcePageReload('parser error')
+                forcePageReload('parser error');
             }
-        })
+        });
 
         // default interval - every 2.5 seconds
-        function reconnect (interval = 2500) {
+        function reconnect(interval = 2500) {
             if (disconnected) {
-                socket.connect()
+                socket.connect();
                 if (retryCount >= 14) {
                     // trying for over 1 minute
-                    interval = 30000 // interval at 30 seconds
+                    interval = 30000; // interval at 30 seconds
                 } else if (retryCount >= 4) {
                     // trying for over 10 seconds
-                    interval = 5000 // interval at 5 seconds
+                    interval = 5000; // interval at 5 seconds
                 }
-                retryCount++
+                retryCount++;
                 // if still within our maximum retry count
                 if (retryCount <= MAX_RETRIES) {
                     // check for a connection again in <interval> milliseconds
-                    reconnectTO = setTimeout(reconnect, interval)
+                    reconnectTO = setTimeout(reconnect, interval);
                 } else {
                     // we have been retrying for 5 minutes so give up and reload the page
-                    forcePageReload('Too many retries')
+                    forcePageReload('Too many retries');
                 }
             }
         }
@@ -197,61 +199,56 @@ fetch('_setup')
         /**
          * Create VueJS App
          */
-        window.Vue = Vue // make VueJS available globally for third-party NR widgets
-        window.vuex = vuex // make Vuex available globally for third-party NR widgets
-        const app = Vue.createApp(App)
-            .use(store)
-            .use(vuetify)
-            .use(router)
+        window.Vue = Vue; // make VueJS available globally for third-party NR widgets
+        window.vuex = vuex; // make Vuex available globally for third-party NR widgets
+        const app = Vue.createApp(App).use(store).use(vuetify).use(router);
 
-        window.app = app;
-
-        const head = createHead()
-        app.use(head)
-        app.mixin(VueHeadMixin)
+        const head = createHead();
+        app.use(head);
+        app.mixin(VueHeadMixin);
         app.mixin({
             methods: {
-                setDynamicProperties (config) {
+                setDynamicProperties(config) {
                     this.$store.commit('ui/widgetState', {
                         widgetId: this.id,
-                        config
-                    })
+                        config,
+                    });
                 },
-                updateDynamicProperty (property, value) {
+                updateDynamicProperty(property, value) {
                     if (!property && typeof property !== 'string') {
-                        throw new Error('updateDynamicProperty requires a valid, string "property" argument')
+                        throw new Error('updateDynamicProperty requires a valid, string "property" argument');
                     }
                     if (typeof value !== 'undefined') {
-                        const config = {}
-                        config[property] = value
+                        const config = {};
+                        config[property] = value;
                         this.$store.commit('ui/widgetState', {
                             widgetId: this.id,
-                            config
-                        })
+                            config,
+                        });
                     }
                 },
                 // retrieves a property from the store for a given widget
-                getProperty (property) {
-                    const config = this.props ? this.props[property] : null // last known value for the config of this widget property
-                    const state = this.state[property] // chec if there have been any dynamic updates to this property
+                getProperty(property) {
+                    const config = this.props ? this.props[property] : null; // last known value for the config of this widget property
+                    const state = this.state[property]; // chec if there have been any dynamic updates to this property
                     // return the dynamic property if it exists, otherwise return the last known configuration
-                    return this.state && property in this.state && state !== null ? state : config
-                }
-            }
-        })
+                    return this.state && property in this.state && state !== null ? state : config;
+                },
+            },
+        });
 
         // make the socket service available app-wide via this.$socket
-        app.provide('$socket', socket)
-        app.provide('$dataTracker', useDataTracker)
+        app.provide('$socket', socket);
+        app.provide('$dataTracker', useDataTracker);
 
         // mount the VueJS app into <div id="app"></div> in /ui/public/index.html
-        app.mount('#app')
+        app.mount('#app');
     })
     .catch((err) => {
         if (err instanceof TypeError && err.message === 'Failed to fetch') {
-            forcePageReload(err)
+            forcePageReload(err);
         } else {
             // handle general errors here
-            console.error('An error occurred:', err)
+            console.error('An error occurred:', err);
         }
-    })
+    });
