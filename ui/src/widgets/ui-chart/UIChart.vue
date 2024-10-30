@@ -25,7 +25,8 @@ export default {
             chart: null,
             hasData: false,
             histogram: [], // populate later for bins per series
-            chartUpdateDebounceTimeout: null
+            chartUpdateDebounceTimeout: null,
+            tooltipDataset: []
         }
     },
     computed: {
@@ -224,10 +225,21 @@ export default {
                             }
                             return true
                         },
-                        filter: (tooltipItem) => {
+                        filter: (tooltipItem, tooltipIndex) => {
                             if (this.props.chartType === 'histogram') {
                                 // don't show tooltips for empty data points
                                 return tooltipItem.parsed.y !== undefined && tooltipItem.parsed.y > 0
+                            } else if (this.props.chartType === 'line') {
+                                if (tooltipIndex === 0) {
+                                    // first element in the loop
+                                    this.tooltipDataset = []
+                                }
+                                if (this.tooltipDataset.indexOf(tooltipItem.datasetIndex) === -1) {
+                                    this.tooltipDataset.push(tooltipItem.datasetIndex)
+                                    return true
+                                } else {
+                                    return false
+                                }
                             }
                             return true
                         }
@@ -475,8 +487,6 @@ export default {
                 // ChartsJS doesn't like undefined data points
                 const data = Array(xLabels.length).fill({})
                 if (xIndex === -1) {
-                    // Add the new x-value to xLabels
-                    xLabels.push(datapoint.x)
                     // Add data to the end of the array
                     data.push(datapoint)
                 } else {
