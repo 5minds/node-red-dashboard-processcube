@@ -1,6 +1,27 @@
 <template>
     <v-app>
-        <div v-if="loading" class="nrdb-splash-loading">
+        <div v-if="error" class="nrdb-placeholder-container">
+            <div class="nrdb-placeholder">
+                <img src="./assets/logo.png">
+                <h1>Node-RED Dashboard 2.0</h1>
+                <img src="./assets/disconnected.png">
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <p :class="'status-warning'" v-html="error.message" />
+                <br>
+                <h4>What you can try:</h4>
+                <div v-if="error.type === 'server unreachable'" style="border: none" class="nrdb-placeholder">
+                    <v-btn rounded @click="reloadApp">
+                        Reload App
+                    </v-btn>
+                </div>
+                <div v-else-if="error.type === 'no internet'" style="border: none" class="nrdb-placeholder">
+                    <v-btn rounded @click="reloadApp">
+                        Reload App
+                    </v-btn>
+                </div>
+            </div>
+        </div>
+        <div v-else-if="loading" class="nrdb-splash-loading">
             <DashboardLoading />
             Loading...
         </div>
@@ -20,6 +41,7 @@
 <script>
 import { mapState } from 'vuex'
 import { markRaw } from 'vue' // eslint-disable-line import/order
+import { initialise as initEditMode } from './EditTracking.js'
 
 import PWABadge from './components/PWABadge.vue'
 import DashboardLoading from './components/loading.vue'
@@ -42,7 +64,8 @@ export default {
     },
     computed: {
         ...mapState('ui', ['dashboards', 'pages', 'widgets']),
-        ...mapState('setup', ['setup']),
+        ...mapState('setup', ['setup', 'error']),
+
         status: function () {
             if (this.dashboards) {
                 const dashboards = Object.keys(this.dashboards)
@@ -140,6 +163,19 @@ export default {
                 })
             })
 
+            // Check for edit key in query and if it matches the edit key in the
+            // configs meta.wysiwyg object, we can enable WYSIWYG editing mode for the page.
+            // The initEditMode setup fn in EditTracking.js module stores this and it is used to enable
+            // the WYSIWYG edit tracking for the page in question.
+            const editKeyInUrl = new URLSearchParams(window.location.search).get('edit-key')
+            const editorPath = new URLSearchParams(window.location.search).get('editor-path')
+
+            const pageIdOk = payload.meta?.wysiwyg?.page && !!payload.pages[payload.meta.wysiwyg.page] && editKeyInUrl === payload.meta.wysiwyg.editKey
+            const dashboardIdOk = payload.meta?.wysiwyg?.dashboard && !!payload.dashboards[payload.meta.wysiwyg.dashboard]
+            if (payload.meta?.wysiwyg?.enabled && editKeyInUrl && pageIdOk && dashboardIdOk) {
+                initEditMode(editKeyInUrl, payload.meta.wysiwyg.page, editorPath)
+            }
+
             // loop over pages, add them to vue router
             Object.values(payload.pages).forEach(page => {
                 // check that the page's bound UI is also in our config
@@ -177,7 +213,7 @@ export default {
                 })
             }
 
-            // if this is the first time we load hte Dashboard, the router hasn't registered the current route properly,
+            // if this is the first time we load the Dashboard, the router hasn't registered the current route properly,
             // so best we just navigate to the existing URL to let router catch up
             this.$router.push(this.$route.fullPath)
 
@@ -209,6 +245,15 @@ export default {
             this.$store.commit('ui/groups', payload.groups)
             this.$store.commit('ui/widgets', payload.widgets)
             this.$store.commit('ui/themes', payload.themes)
+
+            for (const key in payload.themes) {
+                // check if "Default Theme" theme exists
+                if (payload.themes[key].name === 'Default Theme') {
+                    // store the default theme in local storage for use when disconnected from Node-RED
+                    localStorage.setItem('ndrb-theme-default', JSON.stringify(payload.themes[key]))
+                    break
+                }
+            }
         })
     },
     methods: {
@@ -219,6 +264,9 @@ export default {
             this.$router.push({
                 name
             })
+        },
+        reloadApp () {
+            location.reload()
         }
     }
 }

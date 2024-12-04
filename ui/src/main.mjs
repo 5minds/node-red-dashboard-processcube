@@ -26,18 +26,30 @@ import './stylesheets/common.css'
 import store from './store/index.mjs'
 import { useDataTracker } from './widgets/data-tracker.mjs' // eslint-disable-line import/order
 
-// set a base theme on which we will add our custom NR-defined theme
+// Retrieve the "Default" theme from cache
+function retrieveDefaultThemeFromCache () {
+    const cachedTheme = localStorage.getItem('ndrb-theme-default')
+    if (cachedTheme) {
+        return JSON.parse(cachedTheme)
+    }
+    return null
+}
+
+const defaultTheme = retrieveDefaultThemeFromCache()
+
+// set a base theme on which we will add our custom NR-defined theme (initially set to the default theme if exists in cache)
 const theme = {
     dark: false,
     colors: {
-        background: '#fff',
-        'navigation-background': '#ffffff',
-        'group-background': '#ffffff',
-        primary: '#0000ff',
+        background: defaultTheme ? defaultTheme.colors.bgPage : '#fff',
+        'navigation-background': defaultTheme ? defaultTheme.colors.surface : '#ffffff',
+        'group-background': defaultTheme ? defaultTheme.colors.groupBg : '#ffffff',
+        'group-outline': defaultTheme ? defaultTheme.colors.groupOutline : '#d1d1d1',
+        primary: defaultTheme ? defaultTheme.colors.primary : '#0094CE',
         accent: '#ff6b99',
         secondary: '#26ff8c',
         success: '#a5d64c',
-        surface: '#ffffff',
+        surface: defaultTheme ? defaultTheme.colors.surface : '#ffffff',
         info: '#ff53d0',
         warning: '#ff8e00',
         error: '#ff5252'
@@ -74,14 +86,19 @@ function forcePageReload (err) {
     console.log('redirecting to:', window.location.origin + '/dashboard')
 
     // Reloading dashboard without using cache by appending a cache-busting string to fully reload page to allow redirecting to auth
-    window.location.replace(window.location.origin + '/dashboard' + '?' + 'reloadTime=' + Date.now().toString() + Math.random()) // Seems to work on Edge and Chrome on Windows, Chromium and Firefox on Linux, and also on Chrome Android (and also as PWA App)
+    const url = new URL(window.location.origin + '/dashboard')
+    url.searchParams.set('reloadTime', Date.now().toString() + Math.random())
+    if (host.searchParams.has('edit-key')) {
+        url.searchParams.set('edit-key', host.searchParams.get('edit-key'))
+    }
+    window.location.replace(url)
 }
 
 /*
  * Configure SocketIO Client to Interact with Node-RED
  */
 
-// if our scoket disconnects, we should inform the user when it reconnects
+// if our socket disconnects, we should inform the user when it reconnects
 
 // GET our SocketIO Config from Node-RED & any other bits plugins have added to the _setup endpoint
 fetch('_setup')
@@ -92,11 +109,16 @@ fetch('_setup')
             return
         case !response.ok:
             console.error('Failed to fetch setup data:', response)
-            return
-        case host.origin !== new URL(response.url).origin:
+            throw new Error('Failed to fetch setup data:', response)
+        case host.origin !== new URL(response.url).origin: {
             console.log('Following redirect:', response.url)
-            window.location.replace(response.url)
+            const url = new URL(response.url)
+            if (host.searchParams.has('edit-key')) {
+                url.searchParams.set('edit-key', host.searchParams.get('edit-key'))
+            }
+            window.location.replace(url)
             return
+        }
         default:
             break
         }
@@ -122,10 +144,11 @@ fetch('_setup')
 
         let reconnectTO = null
         const MAX_RETRIES = 22 // 4 at 2.5 seconds, 10 at 5 secs then 8 at 30 seconds
-
+        const editKey = host.searchParams.get('edit-key')
         const socket = io({
             ...setup.socketio,
-            reconnection: false
+            reconnection: false,
+            query: editKey ? { editKey } : undefined // include handshake data so that only original edit-key holder can edit
         })
 
         // handle final disconnection
@@ -248,10 +271,45 @@ fetch('_setup')
         app.mount('#app')
     })
     .catch((err) => {
-        if (err instanceof TypeError && err.message === 'Failed to fetch') {
-            forcePageReload(err)
+        function handleOnline () {
+            // remove the online event listener and reload the page
+            window.removeEventListener('online', handleOnline)
+            location.reload()
+        }
+
+        // loads minimal VueJS app to display error message and options to user
+        function loadFallback (error) {
+            // pass the error to the Vuex store
+            store.commit('setup/setError', error)
+            const app = Vue.createApp(App)
+                .use(store)
+                .use(vuetify)
+                .use(router)
+
+            const head = createHead()
+            app.use(head)
+            app.mixin(VueHeadMixin)
+
+            // mount the VueJS app into <div id="app"></div> in /ui/public/index.html
+            app.mount('#app')
+        }
+
+        let error = {}
+        if (navigator.onLine) {
+            if (err instanceof TypeError && err.message === 'Failed to fetch') {
+                forcePageReload(err)
+            } else {
+                error = { error: err, type: 'server unreachable', message: 'There was an error loading the Dashboard.' }
+                loadFallback(error)
+                // Add timer to reload the page every 20 seconds
+                setInterval(() => {
+                    location.reload()
+                }, 20000)
+            }
         } else {
-            // handle general errors here
-            console.error('An error occurred:', err)
+            // Add event listener
+            window.addEventListener('online', handleOnline)
+            error = { error: err, type: 'no internet', message: 'Your device appears to be offline.' }
+            loadFallback(error)
         }
     })
